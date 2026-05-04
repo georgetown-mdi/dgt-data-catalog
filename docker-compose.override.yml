@@ -61,3 +61,7 @@ services:
       # OM-UI-generated DAGs (in /opt/airflow/dag_generated_configs, a
       # separate named volume) untouched.
       - ./airflow/dags:/opt/airflow/dags:ro
+      # GCP service-account credential for the BigQuery connector. The host
+      # directory is gitignored; the file is mounted read-only at a fixed
+      # path that the workflow YAMLs reference via credentialsPath.
+      - ./secrets:/opt/secrets:ro

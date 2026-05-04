@@ -1,5 +1,11 @@
 # Local secrets — JWT, passwords, env-specific overrides
 .env
+# Everything under secrets/ is ignored, except a single .gitkeep so the
+# directory survives `git clone`. Pattern uses /* (not the bare dir) so
+# the !.gitkeep re-include actually works — git can't re-include from a
+# fully-excluded directory.
+secrets/*
+!secrets/.gitkeep
 
 # Container data volumes — root-owned, never committed
 docker-volume/
