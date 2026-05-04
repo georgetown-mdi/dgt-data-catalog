@@ -22,6 +22,7 @@ GOV_DB_USER ?= governance_admin
 
 .PHONY: help env up down restart logs ps fetch-compose seed-clue load-clue \
         psql-gov psql-om jwt ingest profile lineage classify workflows \
+        bq-ingest bq-profile bq-classify bq-workflows \
         airflow-dags clean clean-all
 
 help: ## Show this help.
@@ -76,6 +77,18 @@ classify: ## Run Auto Classification (sample data + PII tagging) on the clue sch
 
 workflows: ingest profile lineage classify ## Run ingest → profile → lineage → classify in sequence.
 	@echo "All workflows complete. Browse http://localhost:8585 → Explore → dgt-governance."
+
+bq-ingest: ## Ingest BigQuery (mdi-governance.etep) metadata into OM.
+	$(DC) exec ingestion metadata ingest -c /opt/airflow/openmetadata/bigquery_ingestion.yaml
+
+bq-profile: ## Profile BigQuery tables (column stats; some metric queries need bigquery.jobs.list).
+	$(DC) exec ingestion metadata profile -c /opt/airflow/openmetadata/bigquery_profiler.yaml
+
+bq-classify: ## Auto Classification + sample data on BigQuery (PII tagging).
+	$(DC) exec ingestion metadata classify -c /opt/airflow/openmetadata/bigquery_classification.yaml
+
+bq-workflows: bq-ingest bq-profile bq-classify ## Full BigQuery chain. Lineage is intentionally skipped (see docs/bigquery-connector.md for IAM).
+	@echo "BigQuery workflows complete. Browse http://localhost:8585 → Explore → dgt-bigquery."
 
 airflow-dags: ## List the DAGs Airflow has registered (helpful when validating new DAG files).
 	$(DC) exec ingestion airflow dags list

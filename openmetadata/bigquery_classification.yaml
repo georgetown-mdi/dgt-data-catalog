@@ -1,0 +1,42 @@
+# Auto-classify BigQuery tables in the etep dataset.
+# Stores sample data and tags PII columns via OM's Auto Classification engine.
+# Reference:
+#   https://docs.open-metadata.org/how-to-guides/data-governance/classification/auto
+
+source:
+  type: bigquery
+  serviceName: dgt-bigquery
+  serviceConnection:
+    config:
+      type: BigQuery
+      credentials:
+        gcpConfig:
+          type: gcp_credential_path
+          path: /opt/secrets/gcp-sa.json
+          projectId:
+            - mdi-governance
+  sourceConfig:
+    config:
+      type: AutoClassification
+      storeSampleData: true
+      enableAutoClassification: true
+      schemaFilterPattern:
+        includes:
+          - ^etep$
+
+# Required structurally — see the same note in clue_classification.yaml.
+processor:
+  type: orm-profiler
+  config: {}
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585/api
+    authProvider: openmetadata
+    securityConfig:
+      jwtToken: ${OM_JWT_TOKEN}
+  loggerLevel: INFO

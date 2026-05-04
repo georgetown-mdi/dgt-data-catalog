@@ -1,0 +1,46 @@
+# Ingest BigQuery dataset metadata into OpenMetadata.
+#
+# Auth: service-account JSON mounted into the ingestion container at
+#   /opt/secrets/gcp-sa.json (see docker-compose.override.yml).
+#   The host file lives under secrets/ and is gitignored.
+#
+# Filter: the demo focuses on the `etep` dataset of project mdi-governance.
+# Adjust schemaFilterPattern / databaseFilterPattern to broaden scope.
+
+source:
+  type: bigquery
+  serviceName: dgt-bigquery
+  serviceConnection:
+    config:
+      type: BigQuery
+      credentials:
+        # The OM 1.12.x docs show `credentialsPath`, but the actual
+        # Pydantic schema (gcpCredentials.GcpCredentialsPath) uses
+        # `type: gcp_credential_path` + `path:`. Verified against the
+        # installed package.
+        gcpConfig:
+          type: gcp_credential_path
+          path: /opt/secrets/gcp-sa.json
+          projectId:
+            - mdi-governance
+  sourceConfig:
+    config:
+      type: DatabaseMetadata
+      markDeletedTables: false
+      includeTables: true
+      includeViews: true
+      schemaFilterPattern:
+        includes:
+          - ^etep$
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585/api
+    authProvider: openmetadata
+    securityConfig:
+      jwtToken: ${OM_JWT_TOKEN}
+  loggerLevel: INFO

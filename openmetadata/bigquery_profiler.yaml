@@ -1,0 +1,42 @@
+# Profile BigQuery tables in the etep dataset — column statistics
+# (rowCount, nullCount, min/max, distinct, histograms).
+#
+# Sample data is *not* stored here (that's bigquery_classification.yaml's job).
+
+source:
+  type: bigquery
+  serviceName: dgt-bigquery
+  serviceConnection:
+    config:
+      type: BigQuery
+      credentials:
+        gcpConfig:
+          type: gcp_credential_path
+          path: /opt/secrets/gcp-sa.json
+          projectId:
+            - mdi-governance
+  sourceConfig:
+    config:
+      type: Profiler
+      computeMetrics: true
+      profileSample: 50
+      includeViews: true
+      schemaFilterPattern:
+        includes:
+          - ^etep$
+
+processor:
+  type: orm-profiler
+  config: {}
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585/api
+    authProvider: openmetadata
+    securityConfig:
+      jwtToken: ${OM_JWT_TOKEN}
+  loggerLevel: INFO
