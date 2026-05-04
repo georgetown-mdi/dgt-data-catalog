@@ -21,7 +21,8 @@ GOV_DB_NAME ?= governance_catalog
 GOV_DB_USER ?= governance_admin
 
 .PHONY: help env up down restart logs ps fetch-compose seed-clue load-clue \
-        psql-gov psql-om jwt ingest profile lineage workflows clean clean-all
+        psql-gov psql-om jwt ingest profile lineage classify workflows \
+        airflow-dags clean clean-all
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -70,8 +71,14 @@ profile: ## Run the profiler workflow on the clue schema (column stats + sample 
 lineage: ## Run the lineage workflow (view + query log parsing) on the clue schema.
 	$(DC) exec ingestion metadata ingest -c /opt/airflow/openmetadata/clue_lineage.yaml
 
-workflows: ingest profile lineage ## Run ingestion → profile → lineage in sequence.
+classify: ## Run Auto Classification (sample data + PII tagging) on the clue schema.
+	$(DC) exec ingestion metadata classify -c /opt/airflow/openmetadata/clue_classification.yaml
+
+workflows: ingest profile lineage classify ## Run ingest → profile → lineage → classify in sequence.
 	@echo "All workflows complete. Browse http://localhost:8585 → Explore → dgt-governance."
+
+airflow-dags: ## List the DAGs Airflow has registered (helpful when validating new DAG files).
+	$(DC) exec ingestion airflow dags list
 
 psql-gov: ## Open psql against the governance Postgres.
 	$(DC) exec governance_pg psql -U $(GOV_DB_USER) -d $(GOV_DB_NAME)

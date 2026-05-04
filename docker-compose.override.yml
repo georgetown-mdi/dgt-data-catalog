@@ -55,3 +55,9 @@ services:
       GOV_DB_PASSWORD: ${GOV_DB_PASSWORD:-governance_admin}
     volumes:
       - ./openmetadata:/opt/airflow/openmetadata:ro
+      # Replace the bundled sample DAGs with our own. The OM image ships
+      # `airflow_*.py` sample DAGs at /opt/airflow/dags; bind-mounting our
+      # directory over that path hides them while leaving the
+      # OM-UI-generated DAGs (in /opt/airflow/dag_generated_configs, a
+      # separate named volume) untouched.
+      - ./airflow/dags:/opt/airflow/dags:ro
