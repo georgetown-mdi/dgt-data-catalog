@@ -106,8 +106,10 @@ See [`docs/architecture.md`](docs/architecture.md) for the full picture and what
 ├── scripts/
 │   ├── load_clue.sh                    # CLUE loader (run via `make load-clue`)
 │   └── fetch_jwt.sh                    # auto-pulls ingestion-bot JWT into .env
+├── airflow/dags/                       # DAGs Airflow loads (ingest/profile/classify)
 ├── docs/
 │   ├── architecture.md                 # what we built and why
+│   ├── dcat-governance-model.md        # the DCAT + gov schema and the lifecycle
 │   └── lineage-sql-guidelines.md       # how to write SQL that produces lineage
 ├── Makefile                            # operator entrypoint (`make help`)
 └── .env.example
