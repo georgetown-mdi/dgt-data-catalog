@@ -1,0 +1,44 @@
+# Extract column-level lineage from the CLUE schema. Combines:
+#   - View lineage: parses CREATE VIEW definitions (works on the v1 vw_* chain)
+#   - Query lineage: scans pg_stat_statements for INSERT INTO ... SELECT,
+#     CREATE TABLE AS, etc. — only meaningful AFTER the transforms have run.
+#
+# Run after governance_ingestion.yaml.
+
+source:
+  type: postgres-lineage
+  serviceName: dgt-governance
+  serviceConnection:
+    config:
+      type: Postgres
+      hostPort: governance_pg:5432
+      username: ${GOV_DB_USER}
+      authType:
+        password: ${GOV_DB_PASSWORD}
+      database: ${GOV_DB_NAME}
+  sourceConfig:
+    config:
+      type: DatabaseLineage
+      queryLogDuration: 7
+      parsingTimeoutLimit: 300
+      resultLimit: 1000
+      databaseFilterPattern:
+        includes:
+          - ^${GOV_DB_NAME}$
+      schemaFilterPattern:
+        includes:
+          - ^clue$
+      overrideViewLineage: false
+      processViewLineage: true
+      processQueryLineage: true
+      processStoredProcedureLineage: true
+sink:
+  type: metadata-rest
+  config: {}
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585/api
+    authProvider: openmetadata
+    securityConfig:
+      jwtToken: ${OM_JWT_TOKEN}
+  loggerLevel: INFO

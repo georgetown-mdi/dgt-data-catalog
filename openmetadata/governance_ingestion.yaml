@@ -1,0 +1,38 @@
+# Ingest the DCAT + governance schemas (and the CLUE schema, when present)
+# from the governance Postgres into OpenMetadata.
+#
+# All `${VAR}` placeholders are substituted from the ingestion container's
+# environment at run time. See docker-compose.override.yml for the wiring.
+
+source:
+  type: postgres
+  serviceName: dgt-governance
+  serviceConnection:
+    config:
+      type: Postgres
+      hostPort: governance_pg:5432
+      username: ${GOV_DB_USER}
+      authType:
+        password: ${GOV_DB_PASSWORD}
+      database: ${GOV_DB_NAME}
+  sourceConfig:
+    config:
+      type: DatabaseMetadata
+      markDeletedTables: false
+      includeTables: true
+      includeViews: true
+      schemaFilterPattern:
+        includes:
+          - ^dcat$
+          - ^gov$
+          - ^clue$
+sink:
+  type: metadata-rest
+  config: {}
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585/api
+    authProvider: openmetadata
+    securityConfig:
+      jwtToken: ${OM_JWT_TOKEN}
+  loggerLevel: INFO
