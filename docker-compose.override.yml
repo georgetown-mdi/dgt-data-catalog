@@ -1,0 +1,57 @@
+# DGT-next overlay
+#
+# This file *adds to* compose/openmetadata.upstream.yml. The upstream file is
+# vendored verbatim and never edited. To roll OM versions, bump OM_VERSION in
+# .env and run `make fetch-compose`.
+#
+# Usage:
+#   docker compose -f compose/openmetadata.upstream.yml -f docker-compose.override.yml up -d
+# (the Makefile wraps this for you)
+
+services:
+  governance_pg:
+    container_name: dgt_governance_pg
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${GOV_DB_NAME:-governance_catalog}
+      POSTGRES_USER: ${GOV_DB_USER:-governance_admin}
+      POSTGRES_PASSWORD: ${GOV_DB_PASSWORD:-governance_admin}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "pg_stat_statements.track=all"
+      - "-c"
+      - "track_activity_query_size=4096"
+    volumes:
+      - ./docker-volume/governance-pg:/var/lib/postgresql/data
+      # DCAT schema + seed run automatically on first container start.
+      - ./governance/init:/docker-entrypoint-initdb.d:ro
+      # CLUE data + transforms are loaded on demand via `make load-clue`.
+      - ./clue:/opt/clue:ro
+    expose:
+      - 5432
+    ports:
+      - "${GOV_DB_HOST_PORT:-5433}:5432"
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${GOV_DB_USER:-governance_admin} -d ${GOV_DB_NAME:-governance_catalog}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Extend the upstream ingestion (Airflow) service: add bind mounts for our
+  # workflow YAMLs and pipe through the env vars they reference. This is the
+  # only thing that makes our YAMLs runnable inside the ingestion container.
+  ingestion:
+    environment:
+      OM_JWT_TOKEN: ${OM_JWT_TOKEN:-}
+      GOV_DB_NAME: ${GOV_DB_NAME:-governance_catalog}
+      GOV_DB_USER: ${GOV_DB_USER:-governance_admin}
+      GOV_DB_PASSWORD: ${GOV_DB_PASSWORD:-governance_admin}
+    volumes:
+      - ./openmetadata:/opt/airflow/openmetadata:ro
