@@ -113,6 +113,56 @@ gcloud projects add-iam-policy-binding mdi-governance \
 `roles/bigquery.user` is a superset that includes `jobUser` if you'd rather
 collapse the grants.
 
+## GCS bridge — getting upstream lineage on EXTERNAL tables without IAM changes
+
+The 8 `etep_box_*` tables in the `etep` dataset are `EXTERNAL`: each one
+federates to a glob of CSV files under `gs://etep/dataflow_v1/`. OM's
+BigQuery connector does not auto-create lineage from external table source
+URIs, so without intervention these tables show no upstream — even though
+the upstream is plainly stated in `external_data_configuration.source_uris`.
+
+DGT-next plugs that gap with a deliberate two-step bridge:
+
+1. **`make gcs-ingest`** — registers the `etep` GCS bucket as an OM
+   Storage Service (`dgt-gcs`) using `openmetadata/gcs_storage_ingestion.yaml`.
+   The connector type is `gcs`; auth re-uses the same SA mounted at
+   `/opt/secrets/gcp-sa.json`. Required IAM is roughly
+   `roles/storage.objectViewer` on the bucket — which the SA already has,
+   so this works out of the box. The result is one `Container` entity:
+   `dgt-gcs.etep`.
+
+2. **`make link-bq-gcs`** — runs `scripts/link_bq_to_gcs.py` (via the
+   `link_bq_to_gcs.sh` host wrapper or the `dgt_gcs_ingestion` DAG). The
+   script lists every `EXTERNAL` table in `mdi-governance.etep` via the
+   BigQuery client, then `PUT`s an `/api/v1/lineage` edge from the GCS
+   container to each table. Idempotent — re-runs are safe.
+
+After both steps, opening any `etep_box_*` table in the OM UI and clicking
+the Lineage tab shows the GCS container as its upstream. The same
+`bash scripts/link_bq_to_gcs.sh` pattern generalizes to any other dataset
+with EXTERNAL tables — bump `BQ_PROJECT` / `BQ_DATASET` / `GCS_BUCKET` env
+vars, point at a different bucket, re-run.
+
+The `dgt_gcs_ingestion` Airflow DAG sequences both steps as a chained DAG
+(`ingest_gcs >> link_bq_to_gcs`), paused on creation. Re-running the DAG
+keeps lineage fresh as new EXTERNAL tables are added.
+
+### Caveats
+
+- **Container fidelity is per-bucket, not per-file.** A single
+  `dgt-gcs.etep` container represents the whole bucket. If you need
+  per-file lineage (e.g., `etep_box_3.csv` vs `etep_box_3_dictionary.csv`),
+  drop an `openmetadata.json` manifest in the bucket per OM's storage
+  manifest spec — child containers per directory will materialize on the
+  next ingest.
+- **Native (non-EXTERNAL) tables aren't touched.** The script intentionally
+  only links tables with `table_type == 'EXTERNAL'`, so it can't fabricate
+  lineage on `dmv`, `dol_wages`, etc. Real lineage on those still requires
+  the IAM grant + an actual transform query.
+- **The bridge is one-way.** The lineage edge is `Container → Table`.
+  OM's UI walks both directions, so you'll see "this BQ table comes from
+  the etep bucket" and "this etep bucket feeds these BQ tables".
+
 ## After IAM is granted
 
 1. Drop a fresh credential JSON in `secrets/gcp-sa.json` if a new key was
@@ -129,7 +179,11 @@ collapse the grants.
 - `openmetadata/bigquery_profiler.yaml` — profiler workflow.
 - `openmetadata/bigquery_classification.yaml` — Auto Classification workflow.
 - `openmetadata/bigquery_lineage.yaml` — lineage workflow (currently skipped; see above).
+- `openmetadata/gcs_storage_ingestion.yaml` — GCS bucket ingestion.
+- `scripts/link_bq_to_gcs.py` — emits Container → Table lineage edges.
+- `scripts/link_bq_to_gcs.sh` — host wrapper around the python script.
 - `airflow/dags/dgt_bigquery_ingestion.py` — Airflow DAG, paused on creation.
 - `airflow/dags/dgt_bigquery_profiler.py`
 - `airflow/dags/dgt_bigquery_classification.py`
-- `docker-compose.override.yml` — adds the `./secrets:/opt/secrets:ro` mount.
+- `airflow/dags/dgt_gcs_ingestion.py` — chains GCS ingestion + the link step.
+- `docker-compose.override.yml` — adds `./secrets:/opt/secrets:ro` and `./scripts:/opt/dgt/scripts:ro`.

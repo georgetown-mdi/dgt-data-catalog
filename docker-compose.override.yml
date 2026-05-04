@@ -65,3 +65,7 @@ services:
       # directory is gitignored; the file is mounted read-only at a fixed
       # path that the workflow YAMLs reference via credentialsPath.
       - ./secrets:/opt/secrets:ro
+      # Helper scripts (link_bq_to_gcs.py etc.) — invoked by Airflow DAGs
+      # from inside the container as well as by the host wrappers via
+      # `docker exec`.
+      - ./scripts:/opt/dgt/scripts:ro

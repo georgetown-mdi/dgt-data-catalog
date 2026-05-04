@@ -110,7 +110,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full picture and what
 ├── secrets/                            # GCP service account JSON (gitignored)
 ├── docs/
 │   ├── architecture.md                 # what we built and why
-│   ├── bigquery-connector.md           # BigQuery wiring + IAM permissions
+│   ├── bigquery-connector.md           # BigQuery + GCS bridge + IAM permissions
 │   ├── dcat-governance-model.md        # the DCAT + gov schema and the lifecycle
 │   └── lineage-sql-guidelines.md       # how to write SQL that produces lineage
 ├── Makefile                            # operator entrypoint (`make help`)

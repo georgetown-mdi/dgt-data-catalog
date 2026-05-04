@@ -1,0 +1,43 @@
+# Ingest the etep GCS bucket as an OpenMetadata Storage Service.
+#
+# Why: the BigQuery `etep` dataset has 8 EXTERNAL tables that federate to
+# files under gs://etep/dataflow_v1/. OM's BigQuery connector doesn't
+# auto-create lineage from external table source URIs, so without this
+# the bucket is invisible. Once ingested as a Container, scripts/link_bq_to_gcs.sh
+# can wire the edges (BQ external table -> GCS container).
+#
+# Auth: same SA as the BigQuery workflows. Needs at minimum:
+#   storage.buckets.get, storage.objects.list  (on the bucket)
+# typically covered by `roles/storage.objectViewer` on the bucket.
+
+source:
+  type: gcs
+  serviceName: dgt-gcs
+  serviceConnection:
+    config:
+      type: GCS
+      credentials:
+        gcpConfig:
+          type: gcp_credential_path
+          path: /opt/secrets/gcp-sa.json
+          projectId:
+            - mdi-governance
+      # Limit to the etep bucket. Drop or extend this list to ingest more.
+      bucketNames:
+        - etep
+
+  sourceConfig:
+    config:
+      type: StorageMetadata
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585/api
+    authProvider: openmetadata
+    securityConfig:
+      jwtToken: ${OM_JWT_TOKEN}
+  loggerLevel: INFO

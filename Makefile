@@ -23,6 +23,7 @@ GOV_DB_USER ?= governance_admin
 .PHONY: help env up down restart logs ps fetch-compose seed-clue load-clue \
         psql-gov psql-om jwt ingest profile lineage classify workflows \
         bq-ingest bq-profile bq-classify bq-workflows \
+        gcs-ingest link-bq-gcs gcs-workflows \
         airflow-dags clean clean-all
 
 help: ## Show this help.
@@ -89,6 +90,15 @@ bq-classify: ## Auto Classification + sample data on BigQuery (PII tagging).
 
 bq-workflows: bq-ingest bq-profile bq-classify ## Full BigQuery chain. Lineage is intentionally skipped (see docs/bigquery-connector.md for IAM).
 	@echo "BigQuery workflows complete. Browse http://localhost:8585 → Explore → dgt-bigquery."
+
+gcs-ingest: ## Ingest the GCS etep bucket as an OM Storage Service container.
+	$(DC) exec ingestion metadata ingest -c /opt/airflow/openmetadata/gcs_storage_ingestion.yaml
+
+link-bq-gcs: ## Wire BigQuery EXTERNAL → GCS container lineage (idempotent).
+	./scripts/link_bq_to_gcs.sh
+
+gcs-workflows: gcs-ingest link-bq-gcs ## Ingest GCS, then bridge BQ→GCS lineage.
+	@echo "GCS lineage wired. Browse http://localhost:8585 → Explore → dgt-bigquery → any etep_box_* table → Lineage."
 
 airflow-dags: ## List the DAGs Airflow has registered (helpful when validating new DAG files).
 	$(DC) exec ingestion airflow dags list
