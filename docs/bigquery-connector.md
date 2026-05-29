@@ -76,42 +76,48 @@ completion — 13 tables in the `etep` dataset land successfully.
 | Workflow | Status | Notes |
 |----------|--------|-------|
 | `bq-ingest` (metadata) | ✓ 100% | 13 tables ingested. |
-| `bq-profile` (column stats) | ~ partial | Column profiles persist (verified — `dmv` got 19 profile rows). The "DML statistics" sub-step that reads `INFORMATION_SCHEMA.JOBS` errors per-table; the workflow continues. |
+| `bq-profile` (column stats) | ✓ 100% | Column + DML profile metrics both persist. |
 | `bq-classify` (sample data + PII tags) | ✓ 100% | Sampler + Auto Classification both 0 errors. Real PII detected: `ny_w2_extract.ssn` → `PII.Sensitive`, `first_name`/`last_name` → `PII.Sensitive`, `mailing_address_state` / `date_of_birth` → `PII.NonSensitive`. |
+| `bq-lineage` (table-to-table from JOBS) | ✓ 100% | Auto-extracts CTAS / INSERT / MERGE / CALL lineage from `INFORMATION_SCHEMA.JOBS_BY_PROJECT`. 30-day lookback. |
 
-## What does NOT work on the current SA
-
-| Feature | Required IAM | Current state |
-|---------|--------------|---------------|
-| **Query-log lineage** (table-to-table from JOBS) | `bigquery.jobs.list` *and* `roles/bigquery.resourceViewer` (or membership of a role granting `SELECT` on the project's `INFORMATION_SCHEMA.JOBS_BY_PROJECT` view) | 403 on `region-us.INFORMATION_SCHEMA.JOBS_BY_PROJECT`. The `bigquery-lineage` source unconditionally queries this table, so the entire lineage workflow exits non-zero — even with `processQueryLineage: false`, which only suppresses *parsing* the result, not the *fetch*. |
-| **BigQuery policy tags** (Data Catalog tags carried into OM) | `roles/datacatalog.viewer` *and* the Data Catalog API enabled on the project | 403 `SERVICE_DISABLED`. Optional; the workflow logs a warning and continues. |
-| **Profile DML statistics** (insert/update/delete row counts) | Same as query-log lineage (reads `INFORMATION_SCHEMA.JOBS`) | Per-table errors during `bq-profile`. Column profiles still persist correctly; only the DML metric is missing. |
-
-## Minimum IAM grant to unlock the full feature set
-
-Have a project owner run, against `mdi-governance`:
+## Required IAM on the SA (already granted on `mdi-governance`)
 
 ```bash
 SA=svc-dgt-datacatalog-prod@mdi-governance.iam.gserviceaccount.com
 
-# Already needed for the basics — confirm it's there
 gcloud projects add-iam-policy-binding mdi-governance \
     --member="serviceAccount:$SA" --role="roles/bigquery.dataViewer"
-
-# To unlock query-log lineage and DML profiler statistics
 gcloud projects add-iam-policy-binding mdi-governance \
     --member="serviceAccount:$SA" --role="roles/bigquery.jobUser"
 gcloud projects add-iam-policy-binding mdi-governance \
-    --member="serviceAccount:$SA" --role="roles/bigquery.resourceViewer"
+    --member="serviceAccount:$SA" --role="roles/bigquery.metadataViewer"
+gcloud projects add-iam-policy-binding mdi-governance \
+    --member="serviceAccount:$SA" --role="roles/bigquery.resourceAdmin"
+gcloud projects add-iam-policy-binding mdi-governance \
+    --member="serviceAccount:$SA" --role="roles/storage.objectViewer"
+gcloud projects add-iam-policy-binding mdi-governance \
+    --member="serviceAccount:$SA" --role="roles/storage.bucketViewer"
+```
 
-# Optional — to surface BigQuery policy tags inside OM
+`roles/bigquery.resourceAdmin` is what specifically grants
+`bigquery.jobs.listAll` — the permission that lets the lineage worker
+read `INFORMATION_SCHEMA.JOBS_BY_PROJECT`. Without it, the lineage
+workflow exits 1 with a 75% partial — confirmed empirically before
+the grant landed (see git history for `bigquery_lineage.yaml`).
+
+### Optional — to surface BigQuery policy tags inside OM
+
+Not enabled in this project; OM logs a non-blocking warning during the
+metadata workflow's connection test:
+
+```bash
 gcloud services enable datacatalog.googleapis.com --project=mdi-governance
 gcloud projects add-iam-policy-binding mdi-governance \
     --member="serviceAccount:$SA" --role="roles/datacatalog.viewer"
 ```
 
-`roles/bigquery.user` is a superset that includes `jobUser` if you'd rather
-collapse the grants.
+Skippable. We use OM's own Auto Classification engine for PII tagging,
+which doesn't need Data Catalog.
 
 ## GCS bridge — getting upstream lineage on EXTERNAL tables without IAM changes
 
@@ -163,24 +169,15 @@ keeps lineage fresh as new EXTERNAL tables are added.
   OM's UI walks both directions, so you'll see "this BQ table comes from
   the etep bucket" and "this etep bucket feeds these BQ tables".
 
-## After IAM is granted
-
-1. Drop a fresh credential JSON in `secrets/gcp-sa.json` if a new key was
-   issued, then `chmod 644` (the container user is not the host user; 600
-   triggers Permission denied).
-2. Flip `bigquery_lineage.yaml` to `processQueryLineage: true` and add a
-   `make bq-lineage` target (mirror of the CLUE one).
-3. Re-run `make bq-workflows && make bq-lineage`.
-
 ## File reference
 
 - `secrets/gcp-sa.json` — credential, gitignored.
 - `openmetadata/bigquery_ingestion.yaml` — metadata workflow.
 - `openmetadata/bigquery_profiler.yaml` — profiler workflow.
 - `openmetadata/bigquery_classification.yaml` — Auto Classification workflow.
-- `openmetadata/bigquery_lineage.yaml` — lineage workflow (currently skipped; see above).
+- `openmetadata/bigquery_lineage.yaml` — lineage workflow (active; 30-day lookback).
 - `openmetadata/gcs_storage_ingestion.yaml` — GCS bucket ingestion.
-- `scripts/link_bq_to_gcs.py` — emits Container → Table lineage edges.
+- `scripts/link_bq_to_gcs.py` — emits Container → Table lineage edges for EXTERNAL tables that the BigQuery connector doesn't link itself.
 - `scripts/link_bq_to_gcs.sh` — host wrapper around the python script.
 - `airflow/dags/dgt_bigquery_ingestion.py` — Airflow DAG, paused on creation.
 - `airflow/dags/dgt_bigquery_profiler.py`

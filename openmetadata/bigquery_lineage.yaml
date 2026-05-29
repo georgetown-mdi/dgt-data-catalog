@@ -32,7 +32,7 @@ source:
   sourceConfig:
     config:
       type: DatabaseLineage
-      queryLogDuration: 7
+      queryLogDuration: 30
       parsingTimeoutLimit: 300
       resultLimit: 1000
       databaseFilterPattern:
@@ -42,11 +42,10 @@ source:
         includes:
           - ^etep$
       processViewLineage: true
-      # processQueryLineage stays off until the SA gets jobs.list +
-      # access to INFORMATION_SCHEMA.JOBS_BY_PROJECT. With the current
-      # permissions the workflow returns 75% (1 error) and exit 1; with
-      # this off it cleanly emits view lineage only.
-      processQueryLineage: false
+      # SA was granted roles/bigquery.resourceAdmin on 2026-05-29
+      # (provides bigquery.jobs.listAll), so query-lineage extraction
+      # via INFORMATION_SCHEMA.JOBS_BY_PROJECT now works.
+      processQueryLineage: true
       processStoredProcedureLineage: true
 
 sink:

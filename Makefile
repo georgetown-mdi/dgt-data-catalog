@@ -24,7 +24,6 @@ GOV_DB_USER ?= governance_admin
         psql-gov psql-om jwt ingest profile lineage classify workflows \
         bq-ingest bq-profile bq-classify bq-workflows \
         gcs-ingest link-bq-gcs gcs-workflows \
-        bq-native-lineage \
         airflow-dags clean clean-all
 
 help: ## Show this help.
@@ -100,9 +99,6 @@ link-bq-gcs: ## Wire BigQuery EXTERNAL → GCS container lineage (idempotent).
 
 gcs-workflows: gcs-ingest link-bq-gcs ## Ingest GCS, then bridge BQ→GCS lineage.
 	@echo "GCS lineage wired. Browse http://localhost:8585 → Explore → dgt-bigquery → any etep_box_* table → Lineage."
-
-bq-native-lineage: ## Pull GCP Data Lineage edges for etep.bq_* tables into OM (stopgap until SA gets bigquery.jobs.listAll). Uses your gcloud user creds.
-	python3 scripts/link_bq_native_lineage.py
 
 airflow-dags: ## List the DAGs Airflow has registered (helpful when validating new DAG files).
 	$(DC) exec ingestion airflow dags list
