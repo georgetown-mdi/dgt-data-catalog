@@ -169,6 +169,55 @@ keeps lineage fresh as new EXTERNAL tables are added.
   OM's UI walks both directions, so you'll see "this BQ table comes from
   the etep bucket" and "this etep bucket feeds these BQ tables".
 
+## Lineage idempotency gotcha — manually-posted edges block workflow refresh
+
+OpenMetadata's lineage upsert is keyed on `(fromEntityId, toEntityId)`.
+If you `PUT /api/v1/lineage` for an edge that already exists, OM
+**does not** overwrite the existing `lineageDetails`. Two consequences
+worth knowing:
+
+1. **A manually-posted bare edge is sticky.** If you bridge an edge by
+   POSTing only `{fromEntity, toEntity}` (as the now-retired
+   `link_bq_native_lineage.py` did), OM stores the edge with empty
+   `lineageDetails`. When the standard lineage workflow later runs and
+   tries to re-emit the same edge with full `sqlQuery` and `columnsLineage`,
+   the new payload is ignored — the empty record wins.
+
+2. **Deleting the stale edge and re-running the workflow doesn't fix
+   it either.** OM caches processed queries by hash; once a CTAS has been
+   ingested for a given run, subsequent runs of the same workflow won't
+   re-process it. The deleted edge stays gone until the cache window
+   rolls or the query re-runs in BigQuery.
+
+The reliable repair when you find a stale bare edge:
+
+```bash
+# 1. Recover the SQL for the missing edge from BigQuery directly
+SQL=$(bq query --use_legacy_sql=false --format=prettyjson "
+  SELECT query FROM \`mdi-governance.region-us.INFORMATION_SCHEMA.JOBS_BY_PROJECT\`
+  WHERE destination_table.table_id = 'bq_etep_box_4'
+    AND statement_type = 'CREATE_TABLE_AS_SELECT'
+  ORDER BY creation_time DESC LIMIT 1
+" | python3 -c "import json,sys;print(json.dumps(json.load(sys.stdin)[0]['query']))")
+
+# 2. PUT the edge again, this time including lineageDetails
+curl -X PUT http://localhost:8585/api/v1/lineage \
+    -H "Authorization: Bearer $OM_JWT_TOKEN" -H "Content-Type: application/json" \
+    -d "{\"edge\": {\"fromEntity\": {\"id\": \"<from-uuid>\", \"type\": \"table\"},
+                    \"toEntity\":   {\"id\": \"<to-uuid>\",   \"type\": \"table\"},
+                    \"lineageDetails\": {\"source\": \"QueryLineage\", \"sqlQuery\": $SQL}}}"
+```
+
+We hit this exactly once, with the `bq_etep_box_3 → bq_etep_box_4` edge that
+the bridge script created on 2026-05-26 before the IAM grant landed. The
+workflow on 2026-05-29 emitted that edge again with full details, but the
+manual record blocked the refresh. The PUT above patched it.
+
+**Practical rule:** if you're ever manually bridging lineage as a stopgap,
+include `lineageDetails.sqlQuery` from the start — even if you have to fetch
+the SQL by another path. Don't post bare edges thinking the workflow will
+fill them in later. It won't.
+
 ## File reference
 
 - `secrets/gcp-sa.json` — credential, gitignored.
