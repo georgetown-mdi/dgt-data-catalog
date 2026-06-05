@@ -19,3 +19,4 @@ clue/data/*.clean.csv
 .DS_Store
 __pycache__/
 *.pyc
+DGT Policy Draft v*.docx.md
