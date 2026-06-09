@@ -44,6 +44,29 @@ services:
       timeout: 5s
       retries: 10
 
+  # Override OM's internal Postgres so it picks up the rotated superuser
+  # password from .env instead of the upstream-hardcoded "password".
+  postgresql:
+    environment:
+      POSTGRES_PASSWORD: ${OM_PG_SUPERUSER_PASSWORD:-password}
+
+  # Migration container reads the same DB creds + JWT keys as the main
+  # OM server, so the override mirrors openmetadata-server's env block.
+  execute-migrate-all:
+    environment:
+      DB_USER_PASSWORD: ${OM_DB_USER_PASSWORD:-openmetadata_password}
+    volumes:
+      - ./secrets/om-jwt-private.der:/opt/openmetadata/conf/private_key.der:ro
+      - ./secrets/om-jwt-public.der:/opt/openmetadata/conf/public_key.der:ro
+
+  # OM server: rotated DB password + custom JWT signing keys.
+  openmetadata-server:
+    environment:
+      DB_USER_PASSWORD: ${OM_DB_USER_PASSWORD:-openmetadata_password}
+    volumes:
+      - ./secrets/om-jwt-private.der:/opt/openmetadata/conf/private_key.der:ro
+      - ./secrets/om-jwt-public.der:/opt/openmetadata/conf/public_key.der:ro
+
   # Extend the upstream ingestion (Airflow) service: add bind mounts for our
   # workflow YAMLs and pipe through the env vars they reference. This is the
   # only thing that makes our YAMLs runnable inside the ingestion container.
@@ -53,6 +76,12 @@ services:
       GOV_DB_NAME: ${GOV_DB_NAME:-governance_catalog}
       GOV_DB_USER: ${GOV_DB_USER:-governance_admin}
       GOV_DB_PASSWORD: ${GOV_DB_PASSWORD:-governance_admin}
+      # Rotated Airflow creds (see scripts/rotate_secrets.sh). The
+      # ingestion_dependency.sh entrypoint reads AIRFLOW_ADMIN_PASSWORD
+      # (not AIRFLOW_PASSWORD) and writes it into
+      # /opt/airflow/simple_auth_manager_passwords.json on every restart.
+      DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow_pass}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
     volumes:
       - ./openmetadata:/opt/airflow/openmetadata:ro
       # Replace the bundled sample DAGs with our own. The OM image ships
@@ -69,3 +98,31 @@ services:
       # from inside the container as well as by the host wrappers via
       # `docker exec`.
       - ./scripts:/opt/dgt/scripts:ro
+
+  # Reverse proxy: Caddy fronts OM (8443) and Airflow (8444). Self-signed
+  # internal cert until a real domain is assigned, at which point swap
+  # the listening directive in proxy/Caddyfile for `<domain> {…}` and
+  # Caddy auto-fetches Let's Encrypt.
+  caddy:
+    image: caddy:2-alpine
+    container_name: dgt_caddy
+    restart: unless-stopped
+    environment:
+      OM_PROXY_PORT: ${OM_PROXY_PORT:-8443}
+      AIRFLOW_PROXY_PORT: ${AIRFLOW_PROXY_PORT:-8444}
+    ports:
+      - "${OM_PROXY_PORT:-8443}:${OM_PROXY_PORT:-8443}"
+      - "${AIRFLOW_PROXY_PORT:-8444}:${AIRFLOW_PROXY_PORT:-8444}"
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - app_net
+    depends_on:
+      - openmetadata-server
+      - ingestion
+
+volumes:
+  caddy-data:
+  caddy-config:

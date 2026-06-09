@@ -1,5 +1,9 @@
 # Local secrets — JWT, passwords, env-specific overrides
 .env
+.env.backup-*
+
+# Pre-rotation Postgres snapshots
+backups/
 # Everything under secrets/ is ignored, except a single .gitkeep so the
 # directory survives `git clone`. Pattern uses /* (not the bare dir) so
 # the !.gitkeep re-include actually works — git can't re-include from a

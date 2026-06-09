@@ -1,0 +1,27 @@
+# DGT-next reverse proxy.
+#
+# Plain HTTP for now — there's no domain, so TLS would mean self-signed
+# warnings and complex SNI/cert wiring. Once you have a domain, replace
+# the `:port` site blocks with the domain name and Caddy auto-fetches a
+# Let's Encrypt cert. Until then, access control is entirely the GCP
+# firewall IP allowlist + the OM/Airflow application auth.
+#
+# Switching to HTTPS later:
+#   :8443  →  dgt.example.org {
+#       reverse_proxy openmetadata-server:8585
+#   }
+
+{
+    # Disable auto HTTP->HTTPS redirects (no certs to redirect to).
+    auto_https off
+}
+
+# OpenMetadata UI on :8443
+:{$OM_PROXY_PORT:8443} {
+    reverse_proxy openmetadata-server:8585
+}
+
+# Airflow UI on :8444
+:{$AIRFLOW_PROXY_PORT:8444} {
+    reverse_proxy ingestion:8080
+}
