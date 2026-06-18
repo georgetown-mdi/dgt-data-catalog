@@ -23,10 +23,25 @@ BOT_USER_ID=$(curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" \
   "$OM_URL/api/v1/bots/name/ingestion-bot" \
   | python3 -c "import json,sys;print(json.load(sys.stdin)['botUser']['id'])")
 
-echo "==> Fetching bot JWT"
-JWT=$(curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "$OM_URL/api/v1/users/auth-mechanism/$BOT_USER_ID" \
-  | python3 -c "import json,sys;print(json.load(sys.stdin)['config']['JWTToken'])")
+echo "==> Fetching bot JWT (generating if absent)"
+AUTH_MECH=$(curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "$OM_URL/api/v1/users/auth-mechanism/$BOT_USER_ID")
+JWT=$(python3 -c "import json,sys;print(json.load(sys.stdin)['config'].get('JWTToken',''))" <<< "$AUTH_MECH")
+if [ -z "$JWT" ]; then
+  # No token stored yet (e.g. fresh install or keys were rotated).
+  # PUT /users/generateToken forces OM to sign a new JWT with the current key.
+  JWT=$(curl -fsS -X PUT \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"JWTTokenExpiry":"Unlimited"}' \
+    "$OM_URL/api/v1/users/generateToken/$BOT_USER_ID" \
+    | python3 -c "import json,sys;print(json.load(sys.stdin)['JWTToken'])")
+  # The generateToken endpoint returns the Fernet-encrypted form; fetch the
+  # plaintext version through the normal auth-mechanism endpoint.
+  JWT=$(curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" \
+    "$OM_URL/api/v1/users/auth-mechanism/$BOT_USER_ID" \
+    | python3 -c "import json,sys;print(json.load(sys.stdin)['config']['JWTToken'])")
+fi
 
 echo "==> Writing OM_JWT_TOKEN to .env"
 if grep -q '^OM_JWT_TOKEN=' .env 2>/dev/null; then

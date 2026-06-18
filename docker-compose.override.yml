@@ -44,11 +44,22 @@ services:
       timeout: 5s
       retries: 10
 
-  # Override OM's internal Postgres so it picks up the rotated superuser
-  # password from .env instead of the upstream-hardcoded "password".
+  # Override OM's internal Postgres:
+  #   • rotate the superuser password out of the upstream default
+  #   • pin PGDATA to the pgdata/ subdirectory so the bind-mount path is stable
+  #     across upgrades (the OM image uses this sub-path by default)
+  #   • inject AIRFLOW_DB_PASSWORD so the init script below can set it
   postgresql:
     environment:
       POSTGRES_PASSWORD: ${OM_PG_SUPERUSER_PASSWORD:-password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow_pass}
+    volumes:
+      # Sets the `airflow` role password on first boot so the ingestion
+      # container can authenticate over TCP (pg_hba.conf uses scram-sha-256
+      # for non-local connections). Named 99_ to run after the OM image's
+      # own init scripts.
+      - ./db/om-pg-init-passwords.sh:/docker-entrypoint-initdb.d/99_dgt_set_passwords.sh:ro
 
   # Migration container reads the same DB creds + JWT keys as the main
   # OM server, so the override mirrors openmetadata-server's env block.
@@ -76,6 +87,10 @@ services:
       GOV_DB_NAME: ${GOV_DB_NAME:-governance_catalog}
       GOV_DB_USER: ${GOV_DB_USER:-governance_admin}
       GOV_DB_PASSWORD: ${GOV_DB_PASSWORD:-governance_admin}
+      # The DB was originally initialised with user `airflow`, not the upstream
+      # default `airflow_user`. The upstream evaluates ${AIRFLOW_DB_USER} at
+      # compose-time into DB_USER, so we must override DB_USER directly here.
+      DB_USER: airflow
       # Rotated Airflow creds (see scripts/rotate_secrets.sh). The
       # ingestion_dependency.sh entrypoint reads AIRFLOW_ADMIN_PASSWORD
       # (not AIRFLOW_PASSWORD) and writes it into
