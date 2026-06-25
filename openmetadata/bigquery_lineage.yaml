@@ -41,6 +41,7 @@ source:
       schemaFilterPattern:
         includes:
           - ^etep$
+          - ^etep_om$
           - ^pseudopeople$
       processViewLineage: true
       # SA was granted roles/bigquery.resourceAdmin on 2026-05-29

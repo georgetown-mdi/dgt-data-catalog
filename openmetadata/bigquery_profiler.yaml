@@ -24,6 +24,7 @@ source:
       schemaFilterPattern:
         includes:
           - ^etep$
+          - ^etep_om$
 
 processor:
   type: orm-profiler

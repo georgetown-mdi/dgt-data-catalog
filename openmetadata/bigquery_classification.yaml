@@ -23,6 +23,7 @@ source:
       schemaFilterPattern:
         includes:
           - ^etep$
+          - ^etep_om$
 
 # Required structurally — see the same note in clue_classification.yaml.
 processor:
