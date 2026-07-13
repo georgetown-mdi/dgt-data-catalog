@@ -20,7 +20,7 @@ OM_VERSION ?= 1.12.6
 GOV_DB_NAME ?= governance_catalog
 GOV_DB_USER ?= governance_admin
 
-.PHONY: help env up down restart logs ps fetch-compose seed-clue load-clue \
+.PHONY: help env secrets up down restart logs ps fetch-compose seed-clue load-clue \
         psql-gov psql-om jwt ingest profile lineage classify workflows \
         bq-ingest bq-profile bq-classify bq-workflows \
         gcs-ingest link-bq-gcs gcs-workflows \
@@ -33,7 +33,23 @@ help: ## Show this help.
 env: ## Initialize .env from .env.example if missing.
 	@test -f .env || (cp .env.example .env && echo "Created .env — review and edit if needed.")
 
-up: env ## Start the full stack (OM + governance Postgres) in the background.
+secrets: ## Generate OM JWT RSA-2048 keypair in secrets/ (skips if already present).
+	@mkdir -p secrets
+	@if [ ! -f secrets/om-jwt-private.der ] || [ ! -f secrets/om-jwt-public.der ]; then \
+		echo "==> Generating OM JWT RSA-2048 keypair..."; \
+		openssl genrsa -out secrets/om-jwt-private.pem 2048 2>/dev/null; \
+		openssl pkcs8 -topk8 -inform PEM -outform DER -nocrypt \
+			-in secrets/om-jwt-private.pem -out secrets/om-jwt-private.der; \
+		openssl rsa -in secrets/om-jwt-private.pem -pubout -outform DER \
+			-out secrets/om-jwt-public.der 2>/dev/null; \
+		chmod 644 secrets/om-jwt-*.der; \
+		rm -f secrets/om-jwt-private.pem; \
+		echo "    Done: secrets/om-jwt-{private,public}.der"; \
+	else \
+		echo "    JWT keys already exist — skipping."; \
+	fi
+
+up: env secrets ## Start the full stack (OM + governance Postgres) in the background.
 	$(DC) up -d
 	@echo "OpenMetadata UI:  http://localhost:8585  (admin@open-metadata.org / admin)"
 	@echo "Airflow UI:       http://localhost:8080  (admin / admin)"
